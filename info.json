@@ -1,0 +1,12 @@
+{
+  "commit": {
+    "commit": "092b0b95dee395eb2fa5ccbff546c4845c074ddf",
+    "author": "wlandau <will.landau@gmail.com>",
+    "time": "2022-07-22 19:03:11",
+    "files": 1,
+    "merge": false,
+    "message": "GHA pkgs\n"
+  },
+  "repo": "https://github.com/ropensci/stantargets",
+  "pkg": "stantargets"
+}
