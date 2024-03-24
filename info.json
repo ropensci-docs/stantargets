@@ -1,0 +1,12 @@
+{
+  "commit": {
+    "commit": "bf761c3d4b0e545a63682e4185df015749d2290e",
+    "author": "wlandau <will.landau.oss@gmail.com>",
+    "time": "2024-02-23 18:59:02",
+    "files": 1,
+    "merge": false,
+    "message": "Make sure function is defined\n"
+  },
+  "repo": "https://github.com/ropensci/stantargets",
+  "pkg": "stantargets"
+}
