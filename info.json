@@ -1,0 +1,13 @@
+{
+  "commit": {
+    "commit": "e9afdf672ef069f9768676f31b5b8af3f2f4d4b5",
+    "author": "wlandau <will.landau.oss@gmail.com>",
+    "time": "2026-07-07T12:34:12Z",
+    "files": 2,
+    "merge": false,
+    "message": "version 0.1.3.9000 (development)\n"
+  },
+  "repo": "https://github.com/ropensci/stantargets",
+  "pkg": "stantargets",
+  "time": "2026-09-05T08:41:45Z"
+}
