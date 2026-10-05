@@ -1,0 +1,4 @@
+# License
+
+    YEAR: 2020
+    COPYRIGHT HOLDER: Eli Lilly and Company
