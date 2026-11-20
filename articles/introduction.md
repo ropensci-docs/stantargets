@@ -1,0 +1,389 @@
+# Introduction to stantargets
+
+The `stantargets` package makes it easy to run a single Stan model and
+keep track of the results.
+[`cmdstanr`](https://github.com/stan-dev/cmdstanr) fits the models, and
+[`targets`](https://docs.ropensci.org/targets/) manages the workflow and
+helps avoid unnecessary computation.
+
+First, write a Stan model file.
+
+``` r
+
+lines <- "data {
+  int <lower = 1> n;
+  vector[n] x;
+  vector[n] y;
+  real true_beta;
+}
+parameters {
+  real beta;
+}
+model {
+  y ~ normal(x * beta, 1);
+  beta ~ normal(0, 1);
+}"
+writeLines(lines, "x.stan")
+```
+
+A typical workflow proceeds as follows:
+
+1.  Prepare a list of input data to Stan, including vector elements `x`
+    and `y`.
+2.  Fit the Stan model using the list of input data.
+3.  Use the fitted model object to compute posterior summaries and
+    convergence diagnostics.
+4.  Use the fitted model object to extract posterior draws of parameters
+    and store them in a tidy data frame.
+5.  Use the fitted model to compute Hamiltonian Monte Carlo (HMC)
+    diagnostics.
+
+`stantargets` expresses this workflow using the
+[`tar_stan_mcmc()`](https://docs.ropensci.org/stantargets/reference/tar_stan_mcmc.html)
+function. To use it in a [`targets`](https://docs.ropensci.org/targets/)
+pipeline, invoke it from the `_targets.R` script of the project.
+
+``` r
+
+# _targets.R
+library(targets)
+library(stantargets)
+
+generate_data <- function(n = 10) {
+  true_beta <- stats::rnorm(n = 1, mean = 0, sd = 1)
+  x <- seq(from = -1, to = 1, length.out = n)
+  y <- stats::rnorm(n, x * true_beta, 1)
+  list(n = n, x = x, y = y, true_beta = true_beta)
+}
+
+# The _targets.R file ends with a list of target objects
+# produced by stantargets::tar_stan_mcmc(), targets::tar_target(), or similar.
+list(
+  tar_stan_mcmc(
+    example,
+    "x.stan",
+    generate_data(),
+    stdout = R.utils::nullfile(),
+    stderr = R.utils::nullfile()
+  )
+)
+```
+
+Above, `tar_stan_mcmc(example, ...)` only *defines* the pipeline. It
+does not actually run Stan, it declares the targets that will eventually
+run Stan. Run
+[`tar_manifest()`](https://docs.ropensci.org/targets/reference/tar_manifest.html)
+to show specific details about the targets.
+
+``` r
+
+tar_manifest()
+```
+
+Each target listed above is responsible for a piece of the workflow.
+
+- `example_file_x`: Reproducibly track changes to the Stan model file.
+- `example_data`: Run the code you supplied to the `data` argument of
+  [`tar_stan_mcmc()`](https://docs.ropensci.org/stantargets/reference/tar_stan_mcmc.md)
+  and return a dataset compatible with Stan.
+- `example_mcmc_x`: Run the MCMC and return an object of class
+  `CmdStanMCMC`.
+- `example_draws_X`: Return a friendly `tibble` of the posterior draws
+  from `example`. Uses the `$draws()` method. Suppress with
+  `draws = FALSE` in
+  [`tar_stan_mcmc()`](https://docs.ropensci.org/stantargets/reference/tar_stan_mcmc.md).
+- `example_summaries_x`: Return a friendly `tibble` of the posterior
+  summaries from `example`. Uses the `$summary()` method. Suppress with
+  `summary = FALSE` in
+  [`tar_stan_mcmc()`](https://docs.ropensci.org/stantargets/reference/tar_stan_mcmc.md).
+- `example_diagnostics_x`: Return a friendly `tibble` of the sampler
+  diagnostics from `example`. Uses the `$sampler_diagnostics()` method.
+  Suppress with `diagnostics = FALSE` in
+  [`tar_stan_mcmc()`](https://docs.ropensci.org/stantargets/reference/tar_stan_mcmc.md).
+
+The suffix `_x` comes from the base name of the model file, in this case
+`x.stan`. If you supply multiple model files to the `stan_files`
+argument, all the models share the same dataset, and the suffixes
+distinguish among the various targets.
+
+[`targets`](https://docs.ropensci.org/targets/) produces a graph to show
+the dependency relationships among the targets. Below, the MCMC depends
+on the model file and the data, and the draws, summary, and diagnostics
+depend on the MCMC.
+
+``` r
+
+tar_visnetwork(targets_only = TRUE)
+```
+
+Run the computation with
+[`tar_make()`](https://docs.ropensci.org/targets/reference/tar_make.html).
+
+``` r
+
+tar_make()
+```
+
+The output lives in a special folder called `_targets/` and you can
+retrieve it with functions
+[`tar_load()`](https://docs.ropensci.org/targets/reference/tar_load.html)
+and
+[`tar_read()`](https://docs.ropensci.org/targets/reference/tar_read.html)
+(from [`targets`](https://docs.ropensci.org/targets/)).
+
+``` r
+
+tar_read(example_summary_x)
+```
+
+At this point, all our results are up to date because their dependencies
+did not change.
+
+``` r
+
+tar_make()
+```
+
+But if we change the underlying code or data, some of the targets will
+no longer be valid, and they will rerun during the next
+[`tar_make()`](https://docs.ropensci.org/targets/reference/tar_make.html).
+Below, we change the Stan model file, so the MCMC reruns while the data
+is skipped. This behavior saves time and enhances reproducibility.
+
+``` r
+
+write(" ", file = "x.stan", append = TRUE)
+```
+
+``` r
+
+tar_outdated()
+```
+
+``` r
+
+tar_visnetwork(targets_only = TRUE)
+```
+
+``` r
+
+tar_make()
+```
+
+At this point, we can add more targets and custom functions for
+additional post-processing.
+
+``` r
+
+# _targets.R
+library(targets)
+library(stantargets)
+
+generate_data <- function(n = 10) {
+  true_beta <- stats::rnorm(n = 1, mean = 0, sd = 1)
+  x <- seq(from = -1, to = 1, length.out = n)
+  y <- stats::rnorm(n, x * true_beta, 1)
+  list(n = n, x = x, y = y, true_beta = true_beta)
+}
+
+list(
+  tar_stan_mcmc(
+    example,
+    "x.stan",
+    generate_data(),
+    stdout = R.utils::nullfile(),
+    stderr = R.utils::nullfile()
+  ),
+  tar_stan_summary(
+    custom_summary,
+    fit = example_mcmc_x,
+    summaries = list(~posterior::quantile2(.x, probs = c(0.25, 0.75)))
+  )
+)
+```
+
+In the graph, our new `custom_summary` target should be connected to the
+upstream `example` target, and only `custom_summary` should be out of
+date.
+
+``` r
+
+tar_visnetwork(targets_only = TRUE)
+```
+
+In the next
+[`tar_make()`](https://docs.ropensci.org/targets/reference/tar_make.html),
+we skip the expensive MCMC and just run the custom summary.
+
+``` r
+
+tar_make()
+```
+
+``` r
+
+tar_read(custom_summary)
+```
+
+## Multiple models
+
+[`tar_stan_mcmc()`](https://docs.ropensci.org/stantargets/reference/tar_stan_mcmc.md)
+and related functions allow you to supply multiple models to
+`stan_files`. If you do, each model will run on the same dataset.
+Consider a new model `y.stan`.
+
+``` r
+
+lines <- "data {
+  int <lower = 1> n;
+  vector[n] x;
+  vector[n] y;
+  real true_beta;
+}
+parameters {
+  real beta;
+}
+model {
+  y ~ normal(x .^ 2 * beta, 1); // Regress on x ^ 2 instead of x.
+  beta ~ normal(0, 1);
+}"
+writeLines(lines, "y.stan")
+```
+
+To include this `y.stan`, we add it to the `stan_files` argument of
+[`tar_stan_mcmc()`](https://docs.ropensci.org/stantargets/reference/tar_stan_mcmc.md).
+
+``` r
+
+# _targets.R
+library(targets)
+library(stantargets)
+
+generate_data <- function(n = 10) {
+  true_beta <- stats::rnorm(n = 1, mean = 0, sd = 1)
+  x <- seq(from = -1, to = 1, length.out = n)
+  y <- stats::rnorm(n, x * true_beta, 1)
+  list(n = n, x = x, y = y, true_beta = true_beta)
+}
+
+list(
+  tar_stan_mcmc(
+    example,
+    c("x.stan", "y.stan"), # another model
+    generate_data(),
+    stdout = R.utils::nullfile(),
+    stderr = R.utils::nullfile()
+  ),
+  tar_stan_summary(
+    custom_summary,
+    fit = example_mcmc_x,
+    summaries = list(~posterior::quantile2(.x, probs = c(0.25, 0.75)))
+  )
+)
+```
+
+In the graph below, notice how the `*_x` targets and `*_y` targets are
+both connected to `example_data` upstream.
+
+``` r
+
+tar_visnetwork(targets_only = TRUE)
+```
+
+## Generated quantities
+
+It is possible to use the `CmdStanMCMC` object from one run to simulate
+generated quantities downstream. For example, the
+`tar_stan_gq_rep_summaries()` function takes a single `CmdStanMCMC`
+object, produces multiple replications of generated quantities from
+multiple models, and aggregates the summaries from each. The following
+pipeline uses this technique to repeatedly draw from the posterior
+predictive distribution.
+
+``` r
+
+lines <- "data {
+  int <lower = 1> n;
+  vector[n] x;
+  vector[n] y;
+}
+parameters {
+  real beta;
+}
+model {
+  y ~ normal(x * beta, 1);
+  beta ~ normal(0, 1);
+}
+generated quantities {
+  array[n] real y_rep = normal_rng(x * beta, 1); // posterior predictive draws
+}"
+writeLines(lines, "gen.stan")
+```
+
+``` r
+
+# _targets.R
+library(targets)
+library(stantargets)
+
+generate_data <- function(n = 10) {
+  true_beta <- stats::rnorm(n = 1, mean = 0, sd = 1)
+  x <- seq(from = -1, to = 1, length.out = n)
+  y <- stats::rnorm(n, x * true_beta, 1)
+  list(n = n, x = x, y = y, true_beta = true_beta)
+}
+
+list(
+  tar_stan_mcmc(
+    example,
+    "x.stan",
+    generate_data(),
+    stdout = R.utils::nullfile(),
+    stderr = R.utils::nullfile()
+  ),
+  tar_stan_gq_rep_summary(
+    postpred,
+    stan_files = "gen.stan",
+    fitted_params = example_mcmc_x, # one CmdStanFit object
+    data = generate_data(), # Function runs once per rep.
+    batches = 2, # 2 dynamic branches
+    reps = 5, # 5 replications per branch
+    quiet = TRUE,
+    stdout = R.utils::nullfile(),
+    stderr = R.utils::nullfile()
+  )
+)
+```
+
+Since we have defined many objects in the pipeline, it is extra
+important to check the graph to be sure everything is connected.
+
+``` r
+
+tar_visnetwork(targets_only = TRUE)
+```
+
+Then, we run the computation. The original MCMC is already up to date,
+so we only run the targets relevant to the generated quantities.
+
+``` r
+
+tar_make()
+```
+
+Finally, we read the summaries of posterior predictive samples.
+
+``` r
+
+tar_read(postpred)
+```
+
+## More information
+
+For more on [`targets`](https://docs.ropensci.org/targets/), please
+visit the reference website <https://docs.ropensci.org/targets/> or the
+user manual <https://books.ropensci.org/targets/>. The manual walks
+though advanced features of `targets` such as [high-performance
+computing](https://books.ropensci.org/targets/hpc.html) and [cloud
+storage
+support](https://books.ropensci.org/targets/data.html#cloud-storage).
